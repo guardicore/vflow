@@ -27,7 +27,7 @@ import (
 	"io"
 	"net"
 
-	"github.com/EdgeCast/vflow/packet"
+	"github.com/guardicore/vflow/packet"
 )
 
 const (

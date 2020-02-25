@@ -29,8 +29,8 @@ import (
 	"io"
 	"net"
 
-	"github.com/EdgeCast/vflow/ipfix"
-	"github.com/EdgeCast/vflow/reader"
+	"github.com/guardicore/vflow/ipfix"
+	"github.com/guardicore/vflow/reader"
 )
 
 type nonfatalError error

@@ -23,7 +23,7 @@
 package main
 
 import (
-	"github.com/EdgeCast/vflow/mirror"
+	"github.com/guardicore/vflow/mirror"
 
 	"net"
 )

@@ -1,4 +1,4 @@
-module github.com/EdgeCast/vflow
+module github.com/guardicore/vflow
 
 go 1.15
 
