@@ -1,10 +1,10 @@
 //: ----------------------------------------------------------------------------
-//: Copyright (C) 2020 Verizon.  All Rights Reserved.
+//: Copyright (C) 2017 Verizon.  All Rights Reserved.
 //: All Rights Reserved
 //:
-//: file:    sflow_unix.go
-//: author:  Mehrdad Arshad Rad
-//: date:    02/01/2020
+//: file:    ipfix.go
+//: author:  Mehrdad Arshad Rad - copied by Jeremy Rossi, but not important
+//: date:    02/01/2017
 //:
 //: Licensed under the Apache License, Version 2.0 (the "License");
 //: you may not use this file except in compliance with the License.
@@ -23,38 +23,38 @@
 package main
 
 import (
-	"net"
-
 <<<<<<< HEAD
 	"github.com/EdgeCast/vflow/mirror"
 =======
 	"github.com/guardicore/vflow/mirror"
->>>>>>> 10f39c1 (use guardicore code 2: after update to v0.9.0)
+>>>>>>> e1c234d (use guardicore code)
+
+	"net"
 )
 
-func mirrorSFlowDispatcher(ch chan SFUDPMsg) {
+func mirrorIPFIXDispatcher(ch chan IPFIXUDPMsg) {
 	var (
-		ch4 = make(chan SFUDPMsg, 1000)
-		ch6 = make(chan SFUDPMsg, 1000)
-		msg SFUDPMsg
+		ch4 = make(chan IPFIXUDPMsg, 1000)
+		ch6 = make(chan IPFIXUDPMsg, 1000)
+		msg IPFIXUDPMsg
 	)
 
-	if opts.SFlowMirrorAddr == "" {
+	if opts.IPFIXMirrorAddr == "" {
 		return
 	}
 
-	for w := 0; w < opts.SFlowMirrorWorkers; w++ {
-		dst := net.ParseIP(opts.SFlowMirrorAddr)
+	for w := 0; w < opts.IPFIXMirrorWorkers; w++ {
+		dst := net.ParseIP(opts.IPFIXMirrorAddr)
 
 		if dst.To4() != nil {
-			go mirrorSFlow(dst, opts.SFlowMirrorPort, ch4)
+			go mirrorIPFIX(dst, opts.IPFIXMirrorPort, ch4)
 		} else {
-			go mirrorSFlow(dst, opts.SFlowMirrorPort, ch6)
+			go mirrorIPFIX(dst, opts.IPFIXMirrorPort, ch6)
 		}
 	}
 
-	sFlowMirrorEnabled = true
-	logger.Printf("sflow mirror service is running (workers#: %d) ...", opts.SFlowMirrorWorkers)
+	ipfixMirrorEnabled = true
+	logger.Printf("ipfix mirror service is running (workers#: %d) ...", opts.IPFIXMirrorWorkers)
 
 	for {
 		msg = <-ch
@@ -66,10 +66,10 @@ func mirrorSFlowDispatcher(ch chan SFUDPMsg) {
 	}
 }
 
-func mirrorSFlow(dst net.IP, port int, ch chan SFUDPMsg) error {
+func mirrorIPFIX(dst net.IP, port int, ch chan IPFIXUDPMsg) error {
 	var (
-		packet = make([]byte, opts.SFlowUDPSize)
-		msg    SFUDPMsg
+		packet = make([]byte, opts.IPFIXUDPSize)
+		msg    IPFIXUDPMsg
 		pLen   int
 		err    error
 		ipHdr  []byte
@@ -83,7 +83,7 @@ func mirrorSFlow(dst net.IP, port int, ch chan SFUDPMsg) error {
 		return err
 	}
 
-	udp := mirror.UDP{SrcPort: 55118, DstPort: port, Length: 0, Checksum: 0}
+	udp := mirror.UDP{55117, port, 0, 0}
 	udpHdr := udp.Marshal()
 
 	if dst.To4() != nil {
@@ -117,7 +117,7 @@ func mirrorSFlow(dst net.IP, port int, ch chan SFUDPMsg) error {
 		copy(packet[ipHLen:ipHLen+8], udpHdr)
 		copy(packet[ipHLen+8:], msg.body)
 
-		sFlowBuffer.Put(msg.body[:opts.SFlowUDPSize])
+		ipfixBuffer.Put(msg.body[:opts.IPFIXUDPSize])
 
 		if err = conn.Send(packet[0 : ipHLen+8+pLen]); err != nil {
 			return err

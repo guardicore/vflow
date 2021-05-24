@@ -29,7 +29,11 @@ import (
 	"sync"
 	"time"
 
+<<<<<<< HEAD
 	"github.com/EdgeCast/vflow/stress/hammer"
+=======
+	"github.com/guardicore/vflow/stress/hammer"
+>>>>>>> 10f39c1 (use guardicore code 2: after update to v0.9.0)
 )
 
 var opts = struct {

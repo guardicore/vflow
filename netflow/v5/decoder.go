@@ -28,7 +28,11 @@ import (
 	"fmt"
 	"net"
 
+<<<<<<< HEAD
 	"github.com/EdgeCast/vflow/reader"
+=======
+	"github.com/guardicore/vflow/reader"
+>>>>>>> 10f39c1 (use guardicore code 2: after update to v0.9.0)
 )
 
 type nonfatalError error

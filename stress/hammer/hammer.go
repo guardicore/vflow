@@ -28,7 +28,11 @@ import (
 	"sync"
 	"time"
 
+<<<<<<< HEAD
 	"github.com/EdgeCast/vflow/mirror"
+=======
+	"github.com/guardicore/vflow/mirror"
+>>>>>>> 10f39c1 (use guardicore code 2: after update to v0.9.0)
 )
 
 const (
