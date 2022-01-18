@@ -48,13 +48,13 @@ type MQueue interface {
 // NewProducer constructs new Messaging Queue
 func NewProducer(mqName string) *Producer {
 	var mqRegistered = map[string]MQueue{
-		"kafka":           new(KafkaSarama),
-		"kafka.sarama":    new(KafkaSarama),
-		"kafka.segmentio": new(KafkaSegmentio),
-		"nsq":             new(NSQ),
-		"nats":            new(NATS),
-		"rawSocket":       new(RawSocket),
-		"http": 		   new(Http),
+		//		"kafka":           new(KafkaSarama),
+		//		"kafka.sarama":    new(KafkaSarama),
+		//		"kafka.segmentio": new(KafkaSegmentio),
+		"nsq":       new(NSQ),
+		"nats":      new(NATS),
+		"rawSocket": new(RawSocket),
+		"http":      new(Http),
 	}
 
 	return &Producer{
