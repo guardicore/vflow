@@ -417,7 +417,7 @@ func (opts *Options) getEnv() {
 	r := reflect.TypeOf(*opts)
 	for i := 0; i < r.NumField(); i++ {
 		key := strings.ToUpper(r.Field(i).Tag.Get("yaml"))
-		key = strings.ReplaceAll(key, "-", "_")
+		key = strings.Replace(key, "-", "_", -1)
 		key = fmt.Sprintf("VFLOW_%s", key)
 		value := os.Getenv(key)
 
