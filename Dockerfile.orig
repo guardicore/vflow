@@ -1,0 +1,29 @@
+# build vFlow in the first stage
+FROM golang:1.15.3 as builder
+WORKDIR /go/src/
+
+<<<<<<< HEAD
+RUN mkdir -p github.com/guardicore/vflow
+ADD . github.com/guardicore/vflow
+WORKDIR /go/src/github.com/guardicore/vflow
+=======
+RUN mkdir -p github.com/EdgeCast/vflow
+ADD . github.com/EdgeCast/vflow
+WORKDIR /go/src/github.com/EdgeCast/vflow
+>>>>>>> 9ae42e9cb0f81c0473a6ed5e214282613dabe14c
+RUN make build
+
+# run vFlow within alpine in the second stage
+FROM alpine:latest
+<<<<<<< HEAD
+COPY --from=builder /go/src/github.com/guardicore/vflow/vflow/vflow /usr/bin/
+=======
+COPY --from=builder /go/src/github.com/EdgeCast/vflow/vflow/vflow /usr/bin/
+>>>>>>> 9ae42e9cb0f81c0473a6ed5e214282613dabe14c
+COPY scripts/dockerStart.sh /dockerStart.sh
+
+EXPOSE 4739 6343 9996 4729 8081
+
+VOLUME /etc/vflow
+
+CMD sh /dockerStart.sh

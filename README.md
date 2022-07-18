@@ -1,6 +1,6 @@
 ![vFlow](docs/imgs/vflow_logo.png?raw=true "vFlow logo")
 ##
-[![Build Status](https://github.com/VerizonDigital/vflow/workflows/vflow/badge.svg)](https://github.com/VerizonDigital/vflow/actions?query=workflow%3Avflow) [![Go Report Card](https://goreportcard.com/badge/github.com/VerizonDigital/vflow)](https://goreportcard.com/report/github.com/VerizonDigital/vflow) [![GoDev](https://pkg.go.dev/static/img/badge.svg)](https://pkg.go.dev/github.com/VerizonDigital/vflow)
+[![Build Status](https://github.com/EdgeCast/vflow/workflows/vflow/badge.svg)](https://github.com/EdgeCast/vflow/actions?query=workflow%3Avflow) [![Go Report Card](https://goreportcard.com/badge/github.com/EdgeCast/vflow)](https://goreportcard.com/report/github.com/EdgeCast/vflow) [![GoDev](https://pkg.go.dev/badge/github.com/EdgeCast/vflow?utm_source=godoc)](https://pkg.go.dev/github.com/EdgeCast/vflow)
 
 High-performance, scalable and reliable IPFIX, sFlow and Netflow collector (written in pure Golang).
 
@@ -24,7 +24,7 @@ High-performance, scalable and reliable IPFIX, sFlow and Netflow collector (writ
 - [JUNOS Integration](/docs/junos_integration.md).
 - [Monitoring](/monitor/README.md).
 - [Stress / Load Generator](/stress/README.md).
-- [Kafka consumer examples](https://github.com/VerizonDigital/vflow/tree/master/consumers).
+- [Kafka consumer examples](https://github.com/EdgeCast/vflow/tree/master/consumers).
 
 ## Decoded IPFIX data
 The IPFIX data decodes to JSON format and IDs are [IANA IPFIX element ID](http://www.iana.org/assignments/ipfix/ipfix.xhtml)
@@ -34,7 +34,7 @@ The IPFIX data decodes to JSON format and IDs are [IANA IPFIX element ID](http:/
 
 ## Decoded sFlow data
 ```json
-{"Version":5,"IPVersion":1,"AgentSubID":5,"SequenceNo":37591,"SysUpTime":3287084017,"SamplesNo":1,"Samples":[{"SequenceNo":1530345639,"SourceID":0,"SamplingRate":4096,"SamplePool":1938456576,"Drops":0,"Input":536,"Output":728,"RecordsNo":3,"Records":{"ExtRouter":{"NextHop":"115.131.251.90","SrcMask":24,"DstMask":14},"ExtSwitch":{"SrcVlan":0,"SrcPriority":0,"DstVlan":0,"DstPriority":0},"RawHeader":{"L2":{"SrcMAC":"58:00:bb:e7:57:6f","DstMAC":"f4:a7:39:44:a8:27","Vlan":0,"EtherType":2048},"L3":{"Version":4,"TOS":0,"TotalLen":1452,"ID":13515,"Flags":0,"FragOff":0,"TTL":62,"Protocol":6,"Checksum":8564,"Src":"10.1.8.5","Dst":"161.140.24.181"},"L4":{"SrcPort":443,"DstPort":56521,"DataOffset":5,"Reserved":0,"Flags":16}}}}],"IPAddress":"192.168.10.0"}
+{"Version":5,"IPVersion":1,"AgentSubID":5,"SequenceNo":37591,"SysUpTime":3287084017,"SamplesNo":1,"Samples":[{"SequenceNo":1530345639,"SourceID":0,"SamplingRate":4096,"SamplePool":1938456576,"Drops":0,"Input":536,"Output":728,"RecordsNo":3,"Records":{"ExtRouter":{"NextHop":"115.131.251.90","SrcMask":24,"DstMask":14},"ExtSwitch":{"SrcVlan":0,"SrcPriority":0,"DstVlan":0,"DstPriority":0},"RawHeader":{"L2":{"SrcMAC":"58:00:bb:e7:57:6f","DstMAC":"f4:a7:39:44:a8:27","Vlan":0,"EtherType":2048},"L3":{"Version":4,"TOS":0,"TotalLen":1452,"ID":13515,"Flags":0,"FragOff":0,"TTL":62,"Protocol":6,"Checksum":8564,"Src":"10.1.8.5","Dst":"161.140.24.181"},"L4":{"SrcPort":443,"DstPort":56521,"DataOffset":5,"Reserved":0,"Flags":16}}}}],"IPAddress":"192.168.10.0","ColTime": 1646157296}
 ```
 ## Decoded Netflow v5 data
 ``` json
@@ -52,17 +52,17 @@ The IPFIX data decodes to JSON format and IDs are [IANA IPFIX element ID](http:/
 ## Build
 Given that the Go Language compiler (version 1.14.x preferred) is installed, you can build it with:
 ```
-go get github.com/VerizonDigital/vflow/vflow
-cd $GOPATH/src/github.com/VerizonDigital/vflow
+go get github.com/EdgeCast/vflow/vflow
+cd $GOPATH/src/github.com/EdgeCast/vflow
 
 make build
 or
 cd vflow; go build 
 ```
 ## Installation
-You can download and install pre-built debian package as below ([RPM and Linux binary are available](https://github.com/VerizonDigital/vflow/releases)). 
+You can download and install pre-built debian package as below ([RPM and Linux binary are available](https://github.com/EdgeCast/vflow/releases)). 
 
-dpkg -i [vflow-0.9.0-x86_64.deb](https://github.com/VerizonDigital/vflow/releases/download/v0.9.0/vflow-0.9.0-x86_64.deb)
+dpkg -i [vflow-0.9.0-x86_64.deb](https://github.com/EdgeCast/vflow/releases/download/v0.9.0/vflow-0.9.0-x86_64.deb)
 
 Once you installed you need to configure the below files, for more information check [configuration guide](/docs/config.md):
 ```
@@ -76,7 +76,7 @@ service vflow start
 
 ## Kubernetes
 ```
-kubectl apply -f https://github.com/VerizonDigital/vflow/blob/master/kubernetes/deploy.yaml
+kubectl apply -f https://github.com/EdgeCast/vflow/blob/master/kubernetes/deploy.yaml
 ```
 
 ## Docker
