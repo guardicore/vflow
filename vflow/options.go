@@ -275,7 +275,7 @@ func (opts Options) getCPU() int {
 		}
 
 		if pctInt < 1 || pctInt > 100 {
-			opts.Logger.Fatalf(invalCPUErr)
+			opts.Logger.Fatalf("%s", invalCPUErr)
 		}
 
 		numCPU = int(float32(availCPU) * (float32(pctInt) / 100))
@@ -286,7 +286,7 @@ func (opts Options) getCPU() int {
 		}
 
 		if numInt < 1 {
-			opts.Logger.Fatalf(numCPUErr)
+			opts.Logger.Fatalf("%s", numCPUErr)
 		}
 
 		numCPU = numInt

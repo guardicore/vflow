@@ -87,7 +87,7 @@ func (rs *RawSocket) inputMsg(topic string, mCh chan []byte, ec *uint64) {
 		}
 
 		for i := 0; ; i++ {
-			_, err = fmt.Fprintf(rs.connection, string(msg)+"\n")
+			_, err = fmt.Fprintf(rs.connection, "%s\n", msg)
 			if err == nil {
 				break
 			}
