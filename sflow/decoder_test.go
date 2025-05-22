@@ -259,6 +259,23 @@ func TestSFIPv6Decode(t *testing.T) {
 	}
 }
 
+func TestSFDecodeWithPaddingAfterSample(t *testing.T) {
+	filter := []uint32{DataCounterSample}
+	reader := bytes.NewReader(TestsFlowRawPacketWithPaddingAfterSample)
+	d := NewSFDecoder(reader, filter)
+	datagram, err := d.SFDecode()
+	if err != nil {
+		t.Error("unexpected error", err)
+	}
+	if len(datagram.Samples) != 5 {
+		t.Error("expected samples## 5, got", len(datagram.Samples))
+	}
+	sample := datagram.Samples[4].(*FlowSample)
+	if sample.RecordsNo != 4 {
+		t.Error("expected RecordsNo 4, got ", sample.RecordsNo)
+	}
+}
+
 func TestDecodeSampleHeader(t *testing.T) {
 	filter := []uint32{DataCounterSample}
 	reader := bytes.NewReader(TestsFlowRawPacket)
