@@ -47,5 +47,5 @@ require (
 	github.com/rcrowley/go-metrics v0.0.0-20201227073835-cf1acfcdf475 // indirect
 	golang.org/x/crypto v0.38.0 // indirect
 	golang.org/x/sys v0.33.0 // indirect
-	google.golang.org/protobuf v1.26.0 // indirect
+	google.golang.org/protobuf v1.33.0 // indirect
 )
