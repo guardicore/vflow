@@ -25,12 +25,21 @@ package ipfix
 import (
 	"bytes"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"net"
 	"strconv"
+	"strings"
 )
 
 var errUknownMarshalDataType = errors.New("unknown data type to marshal")
+
+func sanitizeString(s string) string {
+	if idx := strings.IndexByte(s, 0); idx != -1 {
+		s = s[:idx]
+	}
+	return s
+}
 
 // JSONMarshal encodes IPFIX message
 func (m *Message) JSONMarshal(b *bytes.Buffer) ([]byte, error) {
@@ -184,9 +193,8 @@ func (m *Message) writeValue(b *bytes.Buffer, i, j int) error {
 	case float64:
 		b.WriteString(strconv.FormatFloat(m.DataSets[i][j].Value.(float64), 'E', -1, 64))
 	case string:
-		b.WriteByte('"')
-		b.WriteString(m.DataSets[i][j].Value.(string))
-		b.WriteByte('"')
+		var asJson, _ = json.Marshal(sanitizeString(m.DataSets[i][j].Value.(string)))
+		b.Write(asJson)
 	case net.IP:
 		b.WriteByte('"')
 		b.WriteString(m.DataSets[i][j].Value.(net.IP).String())
