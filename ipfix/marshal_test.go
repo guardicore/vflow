@@ -26,6 +26,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"net"
+	"strings"
 	"testing"
 )
 
@@ -154,5 +155,115 @@ func chkFloat64(t *testing.T, f TestDecodedField, expect float64) {
 func chkString(t *testing.T, f TestDecodedField, expect string) {
 	if f.V.(string) != expect {
 		t.Errorf("expect ID %d value %s, got %s", f.I, expect, f.V.(string))
+	}
+}
+
+func TestSanitizeString(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		{
+			name:     "string without null terminator",
+			input:    "hello world",
+			expected: "hello world",
+		},
+		{
+			name:     "string with null terminator at end",
+			input:    "hello\x00",
+			expected: "hello",
+		},
+		{
+			name:     "string with null terminator in middle",
+			input:    "hello\x00world",
+			expected: "hello",
+		},
+		{
+			name:     "string with multiple null terminators",
+			input:    "hello\x00\x00world",
+			expected: "hello",
+		},
+		{
+			name:     "empty string",
+			input:    "",
+			expected: "",
+		},
+		{
+			name:     "string starting with null",
+			input:    "\x00hello",
+			expected: "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := sanitizeString(tt.input)
+			if result != tt.expected {
+				t.Errorf("sanitizeString(%q) = %q, want %q", tt.input, result, tt.expected)
+			}
+		})
+	}
+}
+
+func TestJSONMarshalWithNullTerminatedString(t *testing.T) {
+	buf := new(bytes.Buffer)
+	msg := Message{
+		AgentID: "10.10.10.10",
+		Header: MessageHeader{
+			Version:    10,
+			Length:     420,
+			ExportTime: 1483484756,
+			SequenceNo: 2563920489,
+			DomainID:   34560,
+		},
+		DataSets: [][]DecodedField{
+			{
+				{ID: 1, Value: "hello\x00world"},
+				{ID: 2, Value: "test\x00"},
+			},
+		},
+	}
+
+	b, err := msg.JSONMarshal(buf)
+	if err != nil {
+		t.Error("unexpected error", err)
+	}
+
+	// Verify the JSON contains the sanitized strings
+	jsonStr := string(b)
+	if !strings.Contains(jsonStr, `"hello"`) {
+		t.Error("expected sanitized string 'hello' in JSON output")
+	}
+	if !strings.Contains(jsonStr, `"test"`) {
+		t.Error("expected sanitized string 'test' in JSON output")
+	}
+	if strings.Contains(jsonStr, "world") {
+		t.Error("string should be truncated at null terminator, 'world' should not appear")
+	}
+	// Verify the output is valid JSON
+	var testMsg TestMessage
+	if err := json.Unmarshal(b, &testMsg); err != nil {
+		t.Errorf("generated JSON is not valid: %v\nJSON: %s", err, jsonStr)
+	}
+	// Verify the unmarshaled data has sanitized strings
+	found := false
+	for _, ds := range testMsg.DataSets {
+		for _, f := range ds {
+			if f.I == 1 {
+				if f.V.(string) != "hello" {
+					t.Errorf("expected sanitized string 'hello' for ID 1, got %s", f.V.(string))
+				}
+				found = true
+			}
+			if f.I == 2 {
+				if f.V.(string) != "test" {
+					t.Errorf("expected sanitized string 'test' for ID 2, got %s", f.V.(string))
+				}
+			}
+		}
+	}
+	if !found {
+		t.Error("expected to find field with ID 1 in unmarshaled data")
 	}
 }
