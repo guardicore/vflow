@@ -1,6 +1,6 @@
 module github.com/guardicore/vflow
 
-go 1.24.0
+go 1.25.0
 
 require (
 	github.com/ClickHouse/clickhouse-go v1.5.4
@@ -10,7 +10,7 @@ require (
 	github.com/nsqio/go-nsq v1.1.0
 	github.com/prometheus/client_golang v1.12.2
 	github.com/segmentio/kafka-go v0.4.31
-	golang.org/x/net v0.47.0
+	golang.org/x/net v0.56.0
 	gopkg.in/yaml.v2 v2.4.0
 )
 
@@ -45,7 +45,7 @@ require (
 	github.com/prometheus/common v0.32.1 // indirect
 	github.com/prometheus/procfs v0.7.3 // indirect
 	github.com/rcrowley/go-metrics v0.0.0-20201227073835-cf1acfcdf475 // indirect
-	golang.org/x/crypto v0.45.0 // indirect
-	golang.org/x/sys v0.38.0 // indirect
+	golang.org/x/crypto v0.53.0 // indirect
+	golang.org/x/sys v0.46.0 // indirect
 	google.golang.org/protobuf v1.26.0 // indirect
 )
