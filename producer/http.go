@@ -23,11 +23,14 @@
 package producer
 
 import (
+	"context"
+	"fmt"
+	"io"
 	"io/ioutil"
 	"log"
 	"strings"
-	"context"
-	"fmt"
+	"sync"
+	"sync/atomic"
 	"time"
 
 	"gopkg.in/yaml.v2"
@@ -37,9 +40,8 @@ import (
 
 // Http represents Http producer
 type Http struct {
-	connection http.Client
-	config     HttpConfig
-	logger     *log.Logger
+	config HttpConfig
+	logger *log.Logger
 }
 
 // HttpConfig is the struct that holds all configuation for HttpConfig connections
@@ -48,29 +50,25 @@ type HttpConfig struct {
 	URL      string `yaml:"url"`
 	Protocol string `yaml:"protocol"`
 	MaxRetry int    `yaml:"retry-max"`
+	Workers  int    `yaml:"workers"`
 }
 
 func (h *Http) setup(configFile string, logger *log.Logger) error {
-	var err error
 	h.config = HttpConfig{
 		Address:  "localhost:9555",
 		URL:      "",
 		Protocol: "tcp",
 		MaxRetry: 2,
+		Workers:  1,
 	}
 
-	if err = h.load(configFile); err != nil {
+	if err := h.load(configFile); err != nil {
 		logger.Println(err)
 		return err
 	}
 
-	h.connection = http.Client{
-		Timeout: time.Second * 10,
-		Transport: &http.Transport{
-			DialContext: func(_ context.Context, _, _ string) (net.Conn, error) {
-				return net.Dial(h.config.Protocol, h.config.Address)
-			},
-		},
+	if h.config.Workers < 1 {
+		h.config.Workers = 1
 	}
 
 	h.logger = logger
@@ -78,56 +76,66 @@ func (h *Http) setup(configFile string, logger *log.Logger) error {
 	return nil
 }
 
-func (h *Http) inputMsg(topic string, mCh chan []byte, ec *uint64) {
-	var (
-		msg []byte
-		err error
-		ok  bool
-	)
+func (h *Http) newClient(timeout time.Duration) http.Client {
+	return http.Client{
+		Timeout: timeout,
+		Transport: &http.Transport{
+			DialContext: func(_ context.Context, _, _ string) (net.Conn, error) {
+				return net.Dial(h.config.Protocol, h.config.Address)
+			},
+		},
+	}
+}
 
-	h.logger.Printf("start producer: Http, server: %+v, Protocol: %s\n",
-		h.config.Address, h.config.Protocol)
+func (h *Http) inputMsg(topic string, mCh chan []byte, ec *uint64) {
+	h.logger.Printf("start producer: Http, server: %+v, Protocol: %s, workers: %d\n",
+		h.config.Address, h.config.Protocol, h.config.Workers)
+
+	var wg sync.WaitGroup
+	for w := 0; w < h.config.Workers; w++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			h.worker(mCh, ec)
+		}()
+	}
+
+	wg.Wait()
+}
+
+func (h *Http) worker(mCh chan []byte, ec *uint64) {
+	client := h.newClient(time.Second * 10)
 
 	for {
-		msg, ok = <-mCh
+		msg, ok := <-mCh
 		if !ok {
-			break
+			return
 		}
 
 		event := fmt.Sprintf("[%s]", string(msg))
 		for i := 0; ; i++ {
-			_, err = h.connection.Post("http://unix"+h.config.URL, "application/json", strings.NewReader(event))
+			resp, err := client.Post("http://unix"+h.config.URL, "application/json", strings.NewReader(event))
 			if err == nil {
+				io.Copy(io.Discard, resp.Body)
+				resp.Body.Close()
 				break
 			}
 
 			h.logger.Println("Error sending event via POST:", err)
 
-			*ec++
+			atomic.AddUint64(ec, 1)
 
 			if strings.HasSuffix(err.Error(), "broken pipe") {
-				var newConnection = http.Client{
-					Timeout: time.Second * 60,
-					Transport: &http.Transport{
-						DialContext: func(_ context.Context, _, _ string) (net.Conn, error) {
-							return net.Dial(h.config.Protocol, h.config.Address)
-						},
-					},
-				}
-				if err != nil {
-					h.logger.Println("Error when attempting to fix the broken pipe", err)
-				} else {
-					h.logger.Println("Successfully reconnected")
-					h.connection = newConnection
-				}
+				client = h.newClient(time.Second * 10)
+				h.logger.Println("Reconnected after broken pipe")
 			}
 
-			if i >= (h.config.MaxRetry) {
+			if i >= h.config.MaxRetry {
 				h.logger.Println("message failed after the configured retry limit:", err)
 				break
-			} else {
-				h.logger.Println("retrying after error:", err)
 			}
+
+			h.logger.Println("retrying after error:", err)
 		}
 	}
 }

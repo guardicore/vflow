@@ -81,6 +81,7 @@ The vFlow supports these message queuing
 - nsq
 - nats
 - rawSocket
+- http
 
 Note: there are two kafka drivers: [Kafka Sarama](https://github.com/Shopify/sarama) (Default) and [Kafka Segmentio](https://github.com/segmentio/kafka-go) (Kafka-Go)
 
@@ -202,3 +203,31 @@ The rawSocket configuration contains the following key
 |url                  | localhost:9555        | NA                       | URL address to send to. Includes the hostname and port.              |
 |protocol             | tcp                   | NA                       | Protocol to use to send. Can be either "tcp" or "udp"                |
 |retry-max            | 2                     | NA                       | The number of times a message will be retried before giving up on it |
+
+# HTTP Configuration
+
+The HTTP producer POSTs each message to the configured address (e.g. a unix
+socket fronted by a load balancer). It runs a pool of `workers` goroutines that
+drain the message queue concurrently, so many POSTs are in flight at once and
+the downstream backends are fed in parallel.
+
+## Format
+A config file is a plain text file in [YAML](https://en.wikipedia.org/wiki/YAML) format.
+
+```
+key: value
+```
+
+The default configuration file is /etc/vflow/mq.conf, you can be able to change it through vFlow configuration.
+
+
+## Configuration Keys
+The http configuration contains the following key
+
+|Key                  | Default               |  Environment variable    | Description                                                          |
+|---------------------| ----------------------|--------------------------|----------------------------------------------------------------------|
+|address              | localhost:9555        | NA                       | Address to dial. Includes the hostname and port (or unix socket).    |
+|url                  |                       | NA                       | Request path appended to the POST URL.                               |
+|protocol             | tcp                   | NA                       | Protocol to dial. e.g. "tcp" or "unix".                              |
+|retry-max            | 2                     | NA                       | The number of times a message will be retried before giving up on it |
+|workers              | 1                     | NA                       | Number of concurrent POST workers draining the producer queue.       |
