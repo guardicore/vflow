@@ -230,4 +230,4 @@ The http configuration contains the following key
 |url                  |                       | NA                       | Request path appended to the POST URL.                               |
 |protocol             | tcp                   | NA                       | Protocol to dial. e.g. "tcp" or "unix".                              |
 |retry-max            | 2                     | NA                       | The number of times a message will be retried before giving up on it |
-|workers              | 200                   | NA                       | Number of concurrent POST workers draining the producer queue.       |
+|workers              | 1                     | NA                       | Number of concurrent POST workers draining the producer queue.       |

@@ -59,7 +59,7 @@ func (h *Http) setup(configFile string, logger *log.Logger) error {
 		URL:      "",
 		Protocol: "tcp",
 		MaxRetry: 2,
-		Workers:  200,
+		Workers:  1,
 	}
 
 	if err := h.load(configFile); err != nil {
