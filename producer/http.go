@@ -24,6 +24,7 @@ package producer
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -31,6 +32,7 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"syscall"
 	"time"
 
 	"gopkg.in/yaml.v2"
@@ -76,6 +78,8 @@ func (h *Http) setup(configFile string, logger *log.Logger) error {
 	return nil
 }
 
+const retryBackoff = 50 * time.Millisecond
+
 func (h *Http) newClient(timeout time.Duration) http.Client {
 	return http.Client{
 		Timeout: timeout,
@@ -87,7 +91,7 @@ func (h *Http) newClient(timeout time.Duration) http.Client {
 	}
 }
 
-func (h *Http) inputMsg(topic string, mCh chan []byte, ec *uint64) {
+func (h *Http) inputMsg(topic string, mCh chan []byte, errCount *uint64) {
 	h.logger.Printf("start producer: Http, server: %+v, Protocol: %s, workers: %d\n",
 		h.config.Address, h.config.Protocol, h.config.Workers)
 
@@ -96,36 +100,29 @@ func (h *Http) inputMsg(topic string, mCh chan []byte, ec *uint64) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			h.worker(mCh, ec)
+			h.worker(mCh, errCount)
 		}()
 	}
 
 	wg.Wait()
 }
 
-func (h *Http) worker(mCh chan []byte, ec *uint64) {
+func (h *Http) worker(mCh chan []byte, errCount *uint64) {
 	client := h.newClient(time.Second * 10)
 
-	for {
-		msg, ok := <-mCh
-		if !ok {
-			return
-		}
-
+	for msg := range mCh {
 		event := fmt.Sprintf("[%s]", string(msg))
 		for i := 0; ; i++ {
-			resp, err := client.Post("http://unix"+h.config.URL, "application/json", strings.NewReader(event))
+			err := h.post(&client, event)
 			if err == nil {
-				io.Copy(io.Discard, resp.Body)
-				resp.Body.Close()
 				break
 			}
 
 			h.logger.Println("Error sending event via POST:", err)
 
-			atomic.AddUint64(ec, 1)
+			atomic.AddUint64(errCount, 1)
 
-			if strings.HasSuffix(err.Error(), "broken pipe") {
+			if errors.Is(err, syscall.EPIPE) || errors.Is(err, syscall.ECONNRESET) {
 				client = h.newClient(time.Second * 10)
 				h.logger.Println("Reconnected after broken pipe")
 			}
@@ -136,8 +133,26 @@ func (h *Http) worker(mCh chan []byte, ec *uint64) {
 			}
 
 			h.logger.Println("retrying after error:", err)
+			time.Sleep(retryBackoff)
 		}
 	}
+}
+
+func (h *Http) post(client *http.Client, event string) error {
+	resp, err := client.Post("http://unix"+h.config.URL, "application/json", strings.NewReader(event))
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	// Drain the body so the connection can be reused.
+	io.Copy(io.Discard, resp.Body)
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return fmt.Errorf("unexpected response status: %s", resp.Status)
+	}
+
+	return nil
 }
 
 func (h *Http) load(f string) error {
