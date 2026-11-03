@@ -23,6 +23,7 @@
 package producer
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"io"
@@ -54,6 +55,7 @@ type HttpConfig struct {
 	Protocol string `yaml:"protocol"`
 	MaxRetry int    `yaml:"retry-max"`
 	Workers  int    `yaml:"workers"`
+	Batch    int    `yaml:"batch"`
 }
 
 func (h *Http) setup(configFile string, logger *log.Logger) error {
@@ -63,6 +65,7 @@ func (h *Http) setup(configFile string, logger *log.Logger) error {
 		Protocol: "tcp",
 		MaxRetry: 2,
 		Workers:  1,
+		Batch:    50,
 	}
 
 	if err := h.load(configFile); err != nil {
@@ -72,6 +75,10 @@ func (h *Http) setup(configFile string, logger *log.Logger) error {
 
 	if h.config.Workers < 1 {
 		h.config.Workers = 1
+	}
+
+	if h.config.Batch < 1 {
+		h.config.Batch = 1
 	}
 
 	h.client = h.newClient()
@@ -103,42 +110,64 @@ func (h *Http) newClient() *http.Client {
 }
 
 func (h *Http) inputMsg(topic string, mCh chan []byte, errCount *uint64) {
-	h.logger.Printf("start producer: Http, server: %+v, Protocol: %s, workers: %d\n",
-		h.config.Address, h.config.Protocol, h.config.Workers)
+	h.logger.Printf("start producer: Http, server: %+v, Protocol: %s, workers: %d, batch: %d\n",
+		h.config.Address, h.config.Protocol, h.config.Workers, h.config.Batch)
 
 	var wg sync.WaitGroup
 	for w := 0; w < h.config.Workers; w++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			h.worker(mCh, errCount)
-		}()
+		})
 	}
 
 	wg.Wait()
 }
 
 func (h *Http) worker(mCh chan []byte, errCount *uint64) {
+	batch := make([][]byte, 0, h.config.Batch)
+
 	for msg := range mCh {
-		event := fmt.Sprintf("[%s]", string(msg))
-		for i := 0; ; i++ {
-			err := h.post(event)
-			if err == nil {
-				break
-			}
-
-			h.logger.Println("Error sending event via POST:", err)
-
-			atomic.AddUint64(errCount, 1)
-
-			if i >= h.config.MaxRetry {
-				h.logger.Println("message failed after the configured retry limit:", err)
-				break
-			}
-
-			h.logger.Println("retrying after error:", err)
-			time.Sleep(retryBackoff)
+		batch = append(batch, msg)
+		if len(batch) >= h.config.Batch {
+			h.send(batch, errCount)
+			batch = batch[:0]
 		}
+	}
+
+	if len(batch) > 0 {
+		h.send(batch, errCount)
+	}
+}
+
+func (h *Http) send(batch [][]byte, errCount *uint64) {
+	var buf bytes.Buffer
+	buf.WriteByte('[')
+	for i, msg := range batch {
+		if i > 0 {
+			buf.WriteByte(',')
+		}
+		buf.Write(msg)
+	}
+	buf.WriteByte(']')
+	body := buf.String()
+
+	for i := 0; ; i++ {
+		err := h.post(body)
+		if err == nil {
+			break
+		}
+
+		h.logger.Println("Error sending events via POST:", err)
+
+		atomic.AddUint64(errCount, 1)
+
+		if i >= h.config.MaxRetry {
+			h.logger.Println("batch failed after the configured retry limit:", err)
+			break
+		}
+
+		h.logger.Println("retrying after error:", err)
+		time.Sleep(retryBackoff)
 	}
 }
 

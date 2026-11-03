@@ -206,10 +206,11 @@ The rawSocket configuration contains the following key
 
 # HTTP Configuration
 
-The HTTP producer POSTs each message to the configured address (e.g. a unix
+The HTTP producer POSTs messages to the configured address (e.g. a unix
 socket fronted by a load balancer). It runs a pool of `workers` goroutines that
 drain the message queue concurrently, so many POSTs are in flight at once and
-the downstream backends are fed in parallel.
+the downstream backends are fed in parallel. Each worker groups up to `batch`
+events into a single POST, sent as a JSON array (`[event, event, ...]`).
 
 ## Format
 A config file is a plain text file in [YAML](https://en.wikipedia.org/wiki/YAML) format.
@@ -231,3 +232,4 @@ The http configuration contains the following key
 |protocol             | tcp                   | NA                       | Protocol to dial. e.g. "tcp" or "unix".                              |
 |retry-max            | 2                     | NA                       | The number of times a message will be retried before giving up on it |
 |workers              | 1                     | NA                       | Number of concurrent POST workers draining the producer queue. If a value less than 1 is specified - 1 workers will be used       |
+|batch                | 50                    | NA                       | Number of events grouped into a single POST (JSON array). If a value less than 1 is specified - 1 is used (no batching)           |

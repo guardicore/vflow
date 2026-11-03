@@ -21,6 +21,7 @@
 package producer
 
 import (
+	"encoding/json"
 	"io"
 	"log"
 	"net/http"
@@ -30,13 +31,14 @@ import (
 	"testing"
 )
 
-func newHttp(addr string, workers, maxRetry int) *Http {
+func newHttp(addr string, workers, maxRetry, batch int) *Http {
 	h := &Http{
 		config: HttpConfig{
 			Address:  addr,
 			Protocol: "tcp",
 			MaxRetry: maxRetry,
 			Workers:  workers,
+			Batch:    batch,
 		},
 		logger: log.New(io.Discard, "", 0),
 	}
@@ -48,16 +50,26 @@ func addrOf(ts *httptest.Server) string {
 	return strings.TrimPrefix(ts.URL, "http://")
 }
 
-func TestHttpInputMsgConcurrent(t *testing.T) {
-	var received int64
-	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		atomic.AddInt64(&received, 1)
+func countEventsServer(events, requests *int64) *httptest.Server {
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		atomic.AddInt64(requests, 1)
+		var arr []json.RawMessage
+		if err := json.NewDecoder(r.Body).Decode(&arr); err != nil {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		atomic.AddInt64(events, int64(len(arr)))
 		w.WriteHeader(http.StatusOK)
 	}))
+}
+
+func TestHttpInputMsgConcurrent(t *testing.T) {
+	var events, requests int64
+	ts := countEventsServer(&events, &requests)
 	defer ts.Close()
 
 	const total = 100
-	h := newHttp(addrOf(ts), 8, 2)
+	h := newHttp(addrOf(ts), 8, 2, 1)
 
 	ch := make(chan []byte, total)
 	for i := 0; i < total; i++ {
@@ -68,8 +80,40 @@ func TestHttpInputMsgConcurrent(t *testing.T) {
 	var errCount uint64
 	h.inputMsg("", ch, &errCount)
 
-	if got := atomic.LoadInt64(&received); got != total {
-		t.Fatalf("received = %d, want %d", got, total)
+	if got := atomic.LoadInt64(&events); got != total {
+		t.Fatalf("events = %d, want %d", got, total)
+	}
+	if errCount != 0 {
+		t.Fatalf("errCount = %d, want 0", errCount)
+	}
+}
+
+func TestHttpInputMsgBatch(t *testing.T) {
+	var events, requests int64
+	ts := countEventsServer(&events, &requests)
+	defer ts.Close()
+
+	const (
+		total = 25
+		batch = 10
+	)
+	h := newHttp(addrOf(ts), 1, 2, batch)
+
+	ch := make(chan []byte, total)
+	for i := 0; i < total; i++ {
+		ch <- []byte("{}")
+	}
+	close(ch)
+
+	var errCount uint64
+	h.inputMsg("", ch, &errCount)
+
+	if got := atomic.LoadInt64(&events); got != total {
+		t.Fatalf("events = %d, want %d", got, total)
+	}
+	// 25 events, batch 10 -> 10 + 10 + 5 = 3 requests.
+	if got := atomic.LoadInt64(&requests); got != 3 {
+		t.Fatalf("requests = %d, want 3", got)
 	}
 	if errCount != 0 {
 		t.Fatalf("errCount = %d, want 0", errCount)
@@ -83,7 +127,7 @@ func TestHttpInputMsgNon2xx(t *testing.T) {
 	defer ts.Close()
 
 	const maxRetry = 2
-	h := newHttp(addrOf(ts), 1, maxRetry)
+	h := newHttp(addrOf(ts), 1, maxRetry, 1)
 
 	ch := make(chan []byte, 1)
 	ch <- []byte("{}")
