@@ -56,16 +56,18 @@ type HttpConfig struct {
 	MaxRetry int    `yaml:"retry-max"`
 	Workers  int    `yaml:"workers"`
 	Batch    int    `yaml:"batch"`
+	FlushInterval int `yaml:"flush-interval-ms"`
 }
 
 func (h *Http) setup(configFile string, logger *log.Logger) error {
 	h.config = HttpConfig{
-		Address:  "localhost:9555",
-		URL:      "",
-		Protocol: "tcp",
-		MaxRetry: 2,
-		Workers:  1,
-		Batch:    50,
+		Address:       "localhost:9555",
+		URL:           "",
+		Protocol:      "tcp",
+		MaxRetry:      2,
+		Workers:       1,
+		Batch:         50,
+		FlushInterval: 200,
 	}
 
 	if err := h.load(configFile); err != nil {
@@ -79,6 +81,10 @@ func (h *Http) setup(configFile string, logger *log.Logger) error {
 
 	if h.config.Batch < 1 {
 		h.config.Batch = 1
+	}
+
+	if h.config.FlushInterval < 1 {
+		h.config.FlushInterval = 200
 	}
 
 	h.client = h.newClient()
@@ -126,16 +132,33 @@ func (h *Http) inputMsg(topic string, mCh chan []byte, errCount *uint64) {
 func (h *Http) worker(mCh chan []byte, errCount *uint64) {
 	batch := make([][]byte, 0, h.config.Batch)
 
-	for msg := range mCh {
-		batch = append(batch, msg)
-		if len(batch) >= h.config.Batch {
-			h.send(batch, errCount)
-			batch = batch[:0]
+	interval := time.Duration(h.config.FlushInterval) * time.Millisecond
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+
+	flush := func() {
+		if len(batch) == 0 {
+			return
 		}
+		h.send(batch, errCount)
+		batch = batch[:0]
 	}
 
-	if len(batch) > 0 {
-		h.send(batch, errCount)
+	for {
+		select {
+		case msg, ok := <-mCh:
+			if !ok {
+				flush()
+				return
+			}
+			batch = append(batch, msg)
+			if len(batch) >= h.config.Batch {
+				flush()
+				ticker.Reset(interval)
+			}
+		case <-ticker.C:
+			flush()
+		}
 	}
 }
 

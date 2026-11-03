@@ -233,3 +233,4 @@ The http configuration contains the following key
 |retry-max            | 2                     | NA                       | The number of times a message will be retried before giving up on it |
 |workers              | 1                     | NA                       | Number of concurrent POST workers draining the producer queue. If a value less than 1 is specified - 1 workers will be used       |
 |batch                | 50                    | NA                       | Number of events grouped into a single POST (JSON array). If a value less than 1 is specified - 1 is used (no batching)           |
+|flush-interval-ms    | 200                   | NA                       | Milliseconds after which a partial batch is flushed, so events are not stranded below the batch size. If less than 1 - 200 is used |

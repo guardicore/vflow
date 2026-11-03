@@ -29,16 +29,18 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 )
 
 func newHttp(addr string, workers, maxRetry, batch int) *Http {
 	h := &Http{
 		config: HttpConfig{
-			Address:  addr,
-			Protocol: "tcp",
-			MaxRetry: maxRetry,
-			Workers:  workers,
-			Batch:    batch,
+			Address:       addr,
+			Protocol:      "tcp",
+			MaxRetry:      maxRetry,
+			Workers:       workers,
+			Batch:         batch,
+			FlushInterval: 200,
 		},
 		logger: log.New(io.Discard, "", 0),
 	}
@@ -115,6 +117,48 @@ func TestHttpInputMsgBatch(t *testing.T) {
 	if got := atomic.LoadInt64(&requests); got != 3 {
 		t.Fatalf("requests = %d, want 3", got)
 	}
+	if errCount != 0 {
+		t.Fatalf("errCount = %d, want 0", errCount)
+	}
+}
+
+// TestHttpInputMsgFlushInterval verifies that a partial batch (fewer than
+// Batch events) is flushed by the timer while the channel is still open.
+func TestHttpInputMsgFlushInterval(t *testing.T) {
+	var events, requests int64
+	ts := countEventsServer(&events, &requests)
+	defer ts.Close()
+
+	// Batch far larger than what we send, so only the timer can flush it.
+	h := newHttp(addrOf(ts), 1, 2, 1000)
+	h.config.FlushInterval = 50
+
+	ch := make(chan []byte)
+	var errCount uint64
+	done := make(chan struct{})
+	go func() {
+		h.inputMsg("", ch, &errCount)
+		close(done)
+	}()
+
+	for i := 0; i < 3; i++ {
+		ch <- []byte("{}")
+	}
+
+	// Wait past a couple of flush intervals; the partial batch must be sent
+	// without the channel being closed.
+	deadline := time.Now().Add(2 * time.Second)
+	for atomic.LoadInt64(&events) < 3 && time.Now().Before(deadline) {
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	if got := atomic.LoadInt64(&events); got != 3 {
+		t.Fatalf("events = %d, want 3 (timer flush)", got)
+	}
+
+	close(ch)
+	<-done
+
 	if errCount != 0 {
 		t.Fatalf("errCount = %d, want 0", errCount)
 	}
