@@ -31,7 +31,7 @@ import (
 )
 
 func newHttp(addr string, workers, maxRetry int) *Http {
-	return &Http{
+	h := &Http{
 		config: HttpConfig{
 			Address:  addr,
 			Protocol: "tcp",
@@ -40,6 +40,8 @@ func newHttp(addr string, workers, maxRetry int) *Http {
 		},
 		logger: log.New(io.Discard, "", 0),
 	}
+	h.client = h.newClient()
+	return h
 }
 
 func addrOf(ts *httptest.Server) string {

@@ -24,7 +24,6 @@ package producer
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -32,7 +31,6 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
-	"syscall"
 	"time"
 
 	"gopkg.in/yaml.v2"
@@ -40,9 +38,12 @@ import (
 	"net/http"
 )
 
+const retryBackoff = 50 * time.Millisecond
+
 // Http represents Http producer
 type Http struct {
 	config HttpConfig
+	client *http.Client
 	logger *log.Logger
 }
 
@@ -73,21 +74,31 @@ func (h *Http) setup(configFile string, logger *log.Logger) error {
 		h.config.Workers = 1
 	}
 
+	h.client = h.newClient()
 	h.logger = logger
 
 	return nil
 }
 
-const retryBackoff = 50 * time.Millisecond
+func (h *Http) newClient() *http.Client {
+	dialer := &net.Dialer{
+		Timeout:   5 * time.Second,
+		KeepAlive: 30 * time.Second,
+	}
 
-func (h *Http) newClient(timeout time.Duration) http.Client {
-	return http.Client{
-		Timeout: timeout,
-		Transport: &http.Transport{
-			DialContext: func(_ context.Context, _, _ string) (net.Conn, error) {
-				return net.Dial(h.config.Protocol, h.config.Address)
-			},
+	transport := &http.Transport{
+		DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
+			return dialer.DialContext(ctx, h.config.Protocol, h.config.Address)
 		},
+		MaxIdleConns:        h.config.Workers * 2,
+		MaxIdleConnsPerHost: h.config.Workers * 2,
+		MaxConnsPerHost:     h.config.Workers * 2,
+		IdleConnTimeout:     90 * time.Second,
+	}
+
+	return &http.Client{
+		Timeout:   10 * time.Second,
+		Transport: transport,
 	}
 }
 
@@ -108,12 +119,10 @@ func (h *Http) inputMsg(topic string, mCh chan []byte, errCount *uint64) {
 }
 
 func (h *Http) worker(mCh chan []byte, errCount *uint64) {
-	client := h.newClient(time.Second * 10)
-
 	for msg := range mCh {
 		event := fmt.Sprintf("[%s]", string(msg))
 		for i := 0; ; i++ {
-			err := h.post(&client, event)
+			err := h.post(event)
 			if err == nil {
 				break
 			}
@@ -121,11 +130,6 @@ func (h *Http) worker(mCh chan []byte, errCount *uint64) {
 			h.logger.Println("Error sending event via POST:", err)
 
 			atomic.AddUint64(errCount, 1)
-
-			if errors.Is(err, syscall.EPIPE) || errors.Is(err, syscall.ECONNRESET) {
-				client = h.newClient(time.Second * 10)
-				h.logger.Println("Reconnected after broken pipe")
-			}
 
 			if i >= h.config.MaxRetry {
 				h.logger.Println("message failed after the configured retry limit:", err)
@@ -138,14 +142,13 @@ func (h *Http) worker(mCh chan []byte, errCount *uint64) {
 	}
 }
 
-func (h *Http) post(client *http.Client, event string) error {
-	resp, err := client.Post("http://unix"+h.config.URL, "application/json", strings.NewReader(event))
+func (h *Http) post(event string) error {
+	resp, err := h.client.Post("http://unix"+h.config.URL, "application/json", strings.NewReader(event))
 	if err != nil {
 		return err
 	}
 	defer resp.Body.Close()
 
-	// Drain the body so the connection can be reused.
 	io.Copy(io.Discard, resp.Body)
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
