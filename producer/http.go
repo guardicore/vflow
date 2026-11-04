@@ -23,11 +23,15 @@
 package producer
 
 import (
+	"bytes"
+	"context"
+	"fmt"
+	"io"
 	"io/ioutil"
 	"log"
 	"strings"
-	"context"
-	"fmt"
+	"sync"
+	"sync/atomic"
 	"time"
 
 	"gopkg.in/yaml.v2"
@@ -35,11 +39,13 @@ import (
 	"net/http"
 )
 
+const retryBackoff = 50 * time.Millisecond
+
 // Http represents Http producer
 type Http struct {
-	connection http.Client
-	config     HttpConfig
-	logger     *log.Logger
+	config HttpConfig
+	client *http.Client
+	logger *log.Logger
 }
 
 // HttpConfig is the struct that holds all configuation for HttpConfig connections
@@ -48,88 +54,160 @@ type HttpConfig struct {
 	URL      string `yaml:"url"`
 	Protocol string `yaml:"protocol"`
 	MaxRetry int    `yaml:"retry-max"`
+	Workers  int    `yaml:"workers"`
+	Batch    int    `yaml:"batch"`
+	FlushInterval int `yaml:"flush-interval-ms"`
 }
 
 func (h *Http) setup(configFile string, logger *log.Logger) error {
-	var err error
 	h.config = HttpConfig{
-		Address:  "localhost:9555",
-		URL:      "",
-		Protocol: "tcp",
-		MaxRetry: 2,
+		Address:       "localhost:9555",
+		URL:           "",
+		Protocol:      "tcp",
+		MaxRetry:      2,
+		Workers:       1,
+		Batch:         50,
+		FlushInterval: 200,
 	}
 
-	if err = h.load(configFile); err != nil {
+	if err := h.load(configFile); err != nil {
 		logger.Println(err)
 		return err
 	}
 
-	h.connection = http.Client{
-		Timeout: time.Second * 10,
-		Transport: &http.Transport{
-			DialContext: func(_ context.Context, _, _ string) (net.Conn, error) {
-				return net.Dial(h.config.Protocol, h.config.Address)
-			},
-		},
+	if h.config.Workers < 1 {
+		h.config.Workers = 1
 	}
 
+	if h.config.Batch < 1 {
+		h.config.Batch = 1
+	}
+
+	if h.config.FlushInterval < 1 {
+		h.config.FlushInterval = 200
+	}
+
+	h.client = h.newClient()
 	h.logger = logger
 
 	return nil
 }
 
-func (h *Http) inputMsg(topic string, mCh chan []byte, ec *uint64) {
-	var (
-		msg []byte
-		err error
-		ok  bool
-	)
+func (h *Http) newClient() *http.Client {
+	dialer := &net.Dialer{
+		Timeout:   5 * time.Second,
+		KeepAlive: 30 * time.Second,
+	}
 
-	h.logger.Printf("start producer: Http, server: %+v, Protocol: %s\n",
-		h.config.Address, h.config.Protocol)
+	transport := &http.Transport{
+		DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
+			return dialer.DialContext(ctx, h.config.Protocol, h.config.Address)
+		},
+		MaxIdleConns:        h.config.Workers * 2,
+		MaxIdleConnsPerHost: h.config.Workers * 2,
+		MaxConnsPerHost:     h.config.Workers * 2,
+		IdleConnTimeout:     90 * time.Second,
+	}
+
+	return &http.Client{
+		Timeout:   10 * time.Second,
+		Transport: transport,
+	}
+}
+
+func (h *Http) inputMsg(topic string, mCh chan []byte, errCount *uint64) {
+	h.logger.Printf("start producer: Http, server: %+v, Protocol: %s, workers: %d, batch: %d\n",
+		h.config.Address, h.config.Protocol, h.config.Workers, h.config.Batch)
+
+	var wg sync.WaitGroup
+	for w := 0; w < h.config.Workers; w++ {
+		wg.Go(func() {
+			h.worker(mCh, errCount)
+		})
+	}
+
+	wg.Wait()
+}
+
+func (h *Http) worker(mCh chan []byte, errCount *uint64) {
+	batch := make([][]byte, 0, h.config.Batch)
+
+	interval := time.Duration(h.config.FlushInterval) * time.Millisecond
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+
+	flush := func() {
+		if len(batch) == 0 {
+			return
+		}
+		h.send(batch, errCount)
+		batch = batch[:0]
+	}
 
 	for {
-		msg, ok = <-mCh
-		if !ok {
+		select {
+		case msg, ok := <-mCh:
+			if !ok {
+				flush()
+				return
+			}
+			batch = append(batch, msg)
+			if len(batch) >= h.config.Batch {
+				flush()
+				ticker.Reset(interval)
+			}
+		case <-ticker.C:
+			flush()
+		}
+	}
+}
+
+func (h *Http) send(batch [][]byte, errCount *uint64) {
+	var buf bytes.Buffer
+	buf.WriteByte('[')
+	for i, msg := range batch {
+		if i > 0 {
+			buf.WriteByte(',')
+		}
+		buf.Write(msg)
+	}
+	buf.WriteByte(']')
+	body := buf.String()
+
+	for i := 0; ; i++ {
+		err := h.post(body)
+		if err == nil {
 			break
 		}
 
-		event := fmt.Sprintf("[%s]", string(msg))
-		for i := 0; ; i++ {
-			_, err = h.connection.Post("http://unix"+h.config.URL, "application/json", strings.NewReader(event))
-			if err == nil {
-				break
-			}
+		h.logger.Println("Error sending events via POST:", err)
 
-			h.logger.Println("Error sending event via POST:", err)
+		atomic.AddUint64(errCount, 1)
 
-			*ec++
-
-			if strings.HasSuffix(err.Error(), "broken pipe") {
-				var newConnection = http.Client{
-					Timeout: time.Second * 60,
-					Transport: &http.Transport{
-						DialContext: func(_ context.Context, _, _ string) (net.Conn, error) {
-							return net.Dial(h.config.Protocol, h.config.Address)
-						},
-					},
-				}
-				if err != nil {
-					h.logger.Println("Error when attempting to fix the broken pipe", err)
-				} else {
-					h.logger.Println("Successfully reconnected")
-					h.connection = newConnection
-				}
-			}
-
-			if i >= (h.config.MaxRetry) {
-				h.logger.Println("message failed after the configured retry limit:", err)
-				break
-			} else {
-				h.logger.Println("retrying after error:", err)
-			}
+		if i >= h.config.MaxRetry {
+			h.logger.Println("batch failed after the configured retry limit:", err)
+			break
 		}
+
+		h.logger.Println("retrying after error:", err)
+		time.Sleep(retryBackoff)
 	}
+}
+
+func (h *Http) post(event string) error {
+	resp, err := h.client.Post("http://unix"+h.config.URL, "application/json", strings.NewReader(event))
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	io.Copy(io.Discard, resp.Body)
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return fmt.Errorf("unexpected response status: %s", resp.Status)
+	}
+
+	return nil
 }
 
 func (h *Http) load(f string) error {
